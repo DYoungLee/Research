@@ -8,6 +8,6 @@ Biomedical Signal Processing and Machine Learning
 
 1. Drowsiness detection using Photoplethysmogram (PPG) signals
 
-2. Physiological states recognition using Electrocardiogram (ECG) signals
+2. Pathological states recognition using Electrocardiogram (ECG) signals
 
 3. Emotional states recognition using Electroencephalogram (EEG) signals
