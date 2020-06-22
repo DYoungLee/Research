@@ -32,5 +32,5 @@ for s = 1:scale
     mdlSVM = fitcsvm(X(:,1:s), boolean(Y), 'Standardize', true, 'BoxConstraint', 10,'KernelFunction','RBF');
     mdlSVM = fitPosterior(mdlSVM);
     [~,score_svm] = resubPredict(mdlSVM);
-    [Xsvm, Ysvm, ~, AUC(s,1)] = perfcurve(Y,score_svm(:,mdlSVM.ClassNames),'true');
+    [Xsvm, Ysvm, ~, AUC(s,1)] = perfcurve(boolean(Y),score_svm(:,mdlSVM.ClassNames),'true');
 end
