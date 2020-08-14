@@ -9,10 +9,9 @@ import numpy as np
 import peakutils
 from sklearn.svm import SVC
 from sklearn.model_selection import KFold
-import csv
+import pandas as pd
 import preprocessing
 from pyentrp.entropy import permutation_entropy as PE
-
 
 class process_class:
     def __init__(self, sub_num):
@@ -22,21 +21,14 @@ class process_class:
            sub_num: number of subject
         """
         self.sub_num = sub_num
-        self.ppg_D_set = {'subject' + str(sub_num): []}
-        self.ppg_N_set = {'subject' + str(sub_num): []}
-
-        f = open('./data/normal/subject' + str(sub_num) + '.csv', 'r', encoding='utf-8')
-        rdr = csv.reader(f)
-        for line in rdr:
-            self.ppg_N_set['subject' + str(sub_num)].append(line)
-        f.close()
-
-        f = open('./data/drowsiness/subject' + str(sub_num) + '.csv', 'r', encoding='utf-8')
-        rdr = csv.reader(f)
-        for line in rdr:
-            self.ppg_D_set['subject' + str(sub_num)].append(line)
-        f.close()
-
+        ppg_D = pd.read_csv('./data/drowsiness/subject' + str(sub_num) + '.csv')
+        ppg_N = pd.read_csv('./data/normal/subject' + str(sub_num) + '.csv')
+        
+        self.ppg_D_set = np.array(ppg_D).astype(np.float)
+        self.ppg_N_set = np.array(ppg_N).astype(np.float)
+        
+        self.model = None
+        
     ####################################################################################################################
     def feature_ext(self, signal, flag):
         """Feature extraction of PPG data
@@ -59,7 +51,7 @@ class process_class:
         w = Fs * 15         # window length
         HR_set = []         # list for heart rate feature
         RR_set = []         # list for RR interval feature
-        pe_set = []  # list for heart rate feature
+        PE_set = []         # list for heart rate feature
 
         if flag == 0:       # for classifier training
             sig = np.array(signal).astype(np.float)
@@ -96,20 +88,86 @@ class process_class:
         while 1:
             if num_entropy+q*int(num_entropy/2) >= len(RR_set):
                 tmp = RR_set[q*int(num_entropy/2):]
-                pe_set.append(PE(tmp, m, t))
+                PE_set.append(PE(tmp, m, t))
                 break
             else:
                 tmp = RR_set[q*int(num_entropy/2):num_entropy+q*int(num_entropy/2)]
-                pe_set.append(PE(tmp, m, t))
+                PE_set.append(PE(tmp, m, t))
                 q += 1
 
         HR_set = np.array(HR_set, dtype=np.float)[np.newaxis]
         RR_set = np.array(RR_set, dtype=np.float)[np.newaxis]
-        pe_set = np.array(pe_set, dtype=np.float)[np.newaxis]
-        return HR_set, RR_set, pe_set
-
+        PE_set = np.array(PE_set, dtype=np.float)[np.newaxis]
+        return HR_set, RR_set, PE_set
+    
     ####################################################################################################################
+    def plot_features(self, n=2):
+        """
+        Plot features (randomly selects the same number of features)
+        Args:
+            n: 2(HR, RR) / 3(HR, RR, PE)
+        """
+        
+        markers = ('s', 'x')
+        colors = ('red', 'blue')
+        
+        X1 = self.HR_d
+        Y1 = self.RR_d
+        Z1 = self.pe_d
+        X1 = X1[:, np.random.choice(X1.shape[-1], Z1.shape[-1])]
+        Y1 = Y1[:, np.random.choice(Y1.shape[-1], Z1.shape[-1])]
+        
+        X2 = self.HR_n
+        Y2 = self.RR_n
+        Z2 = self.pe_n
+        X2 = X2[:, np.random.choice(X2.shape[-1], Z2.shape[-1])]
+        Y2 = Y2[:, np.random.choice(Y2.shape[-1], Z2.shape[-1])]            
 
+        fig = plt.figure()
+        if n == 2:
+            plt.scatter(X1, Y1,
+                        alpha=0.8, 
+                        c=colors[0],
+                        marker=markers[0], 
+                        label='drowsiness', 
+                        edgecolor='black')
+            plt.scatter(X2, Y2,
+                        alpha=0.8, 
+                        c=colors[1],
+                        marker=markers[1], 
+                        label='normal', 
+                        edgecolor='black')
+            
+            plt.xlabel('Heart rate')
+            plt.ylabel('RR interval')
+            plt.legend(loc='upper right')
+            plt.show()
+            
+        elif n == 3:
+            ax = fig.add_subplot(111, projection='3d')            
+            ax.scatter(X1, Y1, Z1,
+                        alpha=0.8, 
+                        c=colors[0],
+                        marker=markers[0], 
+                        label='drowsiness', 
+                        edgecolor='black')
+
+            ax.scatter(X2, Y2, Z2,
+                        alpha=0.8, 
+                        c=colors[1],
+                        marker=markers[1], 
+                        label='normal', 
+                        edgecolor='black')
+
+            ax.set_xlabel('Heart rate')
+            ax.set_ylabel('RR interval')
+            ax.set_zlabel('Permutation entropy')
+            plt.legend(loc='upper right')
+            plt.show()
+            
+        else:
+            return
+        
     ####################################################################################################################
     def normalization(self, data, M_o, m_o, M, m):
         """Normalization (Min-Max Feature scaling)
@@ -125,7 +183,6 @@ class process_class:
             Normalized feature
         """
         return (data - m_o)/(M_o - m_o) * (M-m) + m
-    ####################################################################################################################
 
     ####################################################################################################################
     def training(self):
@@ -136,8 +193,8 @@ class process_class:
         """
         ################################################################################################################
         # feature extraction
-        [HR_n, RR_n, pe_n] = self.feature_ext(self.ppg_N_set['subject' + str(self.sub_num)], 0)
-        [HR_d, RR_d, pe_d] = self.feature_ext(self.ppg_D_set['subject' + str(self.sub_num)], 0)
+        [self.HR_n, self.RR_n, self.pe_n] = self.feature_ext(self.ppg_N_set, 0)
+        [self.HR_d, self.RR_d, self.pe_d] = self.feature_ext(self.ppg_D_set, 0)
 
         ################################################################################################################
         # Segmentation and average
@@ -167,17 +224,17 @@ class process_class:
         X[:L_n, 2:3] = pe_n_t[:L_n, :]
         X[L_n:, 2:3] = pe_d_t[:L_d, :]
         
-        Y = np.ones((L_n+L_d, 1))
-        Y = Y.ravel((len(Y), 0))
+        Y = np.ones(L_n+L_d, )
         Y[L_n:] = 0
 
         ################################################################################################################
-        # SVM model
+        # SVM model for online process
         # svm_model = SVC(kernel='linear', C=1.0, random_state=0).fit(X, Y)
         svm_model = SVC(kernel='rbf', C=1.0, gamma=2).fit(X, Y)
-
+        self.model = svm_model
+        
         ################################################################################################################
-        # 5-fold cross validation
+        # 5-fold cross validation for offline test
         acc = []
         cv = KFold(5, shuffle=True, random_state=0)
         for i, (idx_train, idx_test) in enumerate(cv.split(X)):
@@ -191,12 +248,14 @@ class process_class:
 
             pre = svm_model_test.predict(test_x)
             acc.append(len([i for i in range(len(pre)) if pre[i] == test_y[i]])/len(pre))
-            print('%.3f' % (acc[i]))
+            print('%d fold: %.3f' % (i+1, acc[i]))
 
         print('Average accuracy: %.3f' % (np.average(acc)))
 
         return svm_model
 
-# if __name__ == '__main__':
-#     training_class = process_class(1)
-#     model = training_class.training()
+if __name__ == '__main__':
+    sub_num = 2
+    DrowsinessDect = process_class(sub_num)
+    DrowsinessDect.training()
+    DrowsinessDect.plot_features(n=3)
